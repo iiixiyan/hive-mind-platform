@@ -184,6 +184,31 @@ async def execute_agent_workflow(task_id: str, agent_type: str, message: UserMes
         return
 
     try:
+        # 安全检查1: 目标对齐
+        from core.agents import goal_alignment_check
+        if not goal_alignment_check({
+            "task": message.message,
+            "progress": 0.0
+        }):
+            task["status"] = "rejected"
+            task["logs"].append({
+                "time": datetime.now().isoformat(),
+                "message": "目标对齐检查失败，任务被拒绝",
+                "status": "error"
+            })
+            return
+
+        # 安全检查2: 频率限制
+        from core.agents import rate_limit_check
+        if not rate_limit_check(agent_type):
+            task["status"] = "rate_limited"
+            task["logs"].append({
+                "time": datetime.now().isoformat(),
+                "message": "操作频率过高，任务被限制",
+                "status": "warning"
+            })
+            return
+
         # 初始化状态
         initial_state = {
             "messages": [f"Task: {message.message}"],
@@ -191,7 +216,9 @@ async def execute_agent_workflow(task_id: str, agent_type: str, message: UserMes
             "task": message.message,
             "status": "running",
             "progress": 0.0,
-            "start_time": datetime.now()
+            "start_time": datetime.now(),
+            "task_id": task_id,
+            "audit_logs": []
         }
 
         # 执行工作流

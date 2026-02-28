@@ -8,7 +8,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 import json
 
-from core.agents import AgentState, AgentType
+from core.agents import AgentState, AgentType, safety_check, goal_alignment_check, rate_limit_check, add_ai_assist_label, generate_audit_log
 from core.system_prompts import (
     ECHO_SYSTEM_PROMPT,
     ELON_SYSTEM_PROMPT,
@@ -32,6 +32,27 @@ def create_echo_workflow():
 
     def parse_intention(state: AgentState):
         """解析用户意图"""
+        task_id = state.get('task_id', 'unknown')
+
+        # 安全检查1: 目标对齐
+        if not goal_alignment_check(state):
+            audit_log = generate_audit_log(task_id, AgentType.ECHO, 'rejected', '目标对齐失败')
+            print(audit_log)
+            raise ValueError("任务不符合核心目标，已被安全系统拒绝")
+
+        # 安全检查2: 频率限制
+        if not rate_limit_check(AgentType.ECHO):
+            audit_log = generate_audit_log(task_id, AgentType.ECHO, 'rate_limited', '频率限制')
+            print(audit_log)
+            raise ValueError("操作频率过高，请稍后再试")
+
+        # 安全检查3: 基础安全
+        safety_result = safety_check(state)
+        if safety_result == "block":
+            audit_log = generate_audit_log(task_id, AgentType.ECHO, 'blocked', '危险指令检测')
+            print(audit_log)
+            raise ValueError("检测到危险指令，操作已被阻止")
+
         llm = get_llm(AgentType.ECHO)
 
         prompt = f"""作为Echo，请解析以下用户意图并拆解任务：
@@ -49,6 +70,9 @@ Market_Task: [描述市场任务]"""
         response = llm.invoke(prompt)
         content = response.content
 
+        # 添加AI辅助标签
+        content = add_ai_assist_label(content)
+
         # 解析响应
         tech_task = None
         market_task = None
@@ -63,7 +87,8 @@ Market_Task: [描述市场任务]"""
         return {
             **state,
             'tech_tasks': [{'type': 'tech', 'description': tech_task}] if tech_task else [],
-            'market_tasks': [{'type': 'market', 'description': market_task}] if market_task else []
+            'market_tasks': [{'type': 'market', 'description': market_task}] if market_task else [],
+            'audit_logs': state.get('audit_logs', []) + [generate_audit_log(task_id, AgentType.ECHO, 'parse_success', '意图解析成功')]
         }
 
     def dispatch_tasks(state: AgentState):
