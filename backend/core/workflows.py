@@ -14,6 +14,7 @@ from core.system_prompts import (
     ELON_SYSTEM_PROMPT,
     HENRY_SYSTEM_PROMPT
 )
+from core.audit_store import audit_store
 
 # 创建LLM实例
 def get_llm(agent_type: str):
@@ -38,12 +39,14 @@ def create_echo_workflow():
         if not goal_alignment_check(state):
             audit_log = generate_audit_log(task_id, AgentType.ECHO, 'rejected', '目标对齐失败')
             print(audit_log)
+            audit_store.log_safety_event('goal_alignment_failed', '任务不符合核心目标，已被拒绝')
             raise ValueError("任务不符合核心目标，已被安全系统拒绝")
 
         # 安全检查2: 频率限制
         if not rate_limit_check(AgentType.ECHO):
             audit_log = generate_audit_log(task_id, AgentType.ECHO, 'rate_limited', '频率限制')
             print(audit_log)
+            audit_store.log_safety_event('rate_limited', f"Agent {AgentType.ECHO} 频率限制")
             raise ValueError("操作频率过高，请稍后再试")
 
         # 安全检查3: 基础安全
@@ -51,6 +54,7 @@ def create_echo_workflow():
         if safety_result == "block":
             audit_log = generate_audit_log(task_id, AgentType.ECHO, 'blocked', '危险指令检测')
             print(audit_log)
+            audit_store.log_safety_event('dangerous_command', '检测到危险指令', task_id)
             raise ValueError("检测到危险指令，操作已被阻止")
 
         llm = get_llm(AgentType.ECHO)
@@ -84,6 +88,16 @@ Market_Task: [描述市场任务]"""
             elif 'Market_Task:' in line:
                 market_task = line.replace('Market_Task:', '').strip()
 
+        # 记录审计日志到存储
+        if tech_task or market_task:
+            audit_store.log_action(
+                task_id=task_id,
+                agent_type=AgentType.ECHO,
+                action='intention_parsed',
+                details=f'成功解析意图: Tech={tech_task}, Market={market_task}',
+                success=True
+            )
+
         return {
             **state,
             'tech_tasks': [{'type': 'tech', 'description': tech_task}] if tech_task else [],
@@ -109,6 +123,8 @@ Market_Task: [描述市场任务]"""
 
     def generate_report(state: AgentState):
         """生成报告"""
+        task_id = state.get('task_id', 'unknown')
+
         report = f"""✅ 任务执行完成报告
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -134,8 +150,26 @@ Market_Task: [描述市场任务]"""
         if state.get('henry_output'):
             report += f"\n📢 市场产出：\n{state['henry_output']}\n"
 
-        report += f"\n━━━━━━━━━━━━━━━━━━━━━━━━━\n
-感谢使用Hive Mind！"""
+        report += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n感谢使用Hive Mind！"
+
+        # 记录审计日志 - 任务完成
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.ECHO,
+            action='report_generated',
+            details='任务执行完成，生成报告',
+            success=True
+        )
+
+        # 保存任务完成日志
+        if 'audit_logs' in state:
+            audit_store.log_action(
+                task_id=task_id,
+                agent_type=AgentType.ECHO,
+                action='audit_logs_saved',
+                details=f'保存 {len(state["audit_logs"])} 条审计日志',
+                success=True
+            )
 
         return {
             **state,
@@ -168,6 +202,7 @@ def create_elon_workflow():
 
     def architect_design(state: AgentState):
         """架构设计"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.ARCHITECT)
 
         prompt = f"""作为Elon的Architect，请为以下任务设计技术方案：
@@ -193,15 +228,27 @@ def create_elon_workflow():
 [接口列表]"""
 
         response = llm.invoke(prompt)
+        architecture = json.loads(response.content) if '```json' in response.content else {}
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.ARCHITECT,
+            action='architect_design',
+            details='完成架构设计',
+            success=True
+        )
+
         return {
             **state,
-            'architecture': json.loads(response.content) if '```json' in response.content else {},
+            'architecture': architecture,
             'elon_output': response.content,
             'progress': 30
         }
 
     def coder_execute(state: AgentState):
         """代码执行"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.CODER)
 
         prompt = f"""作为Elon的Coder，请实现以下架构设计：
@@ -212,6 +259,16 @@ def create_elon_workflow():
 请提供完整的代码实现"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.CODER,
+            action='coder_execute',
+            details='完成代码实现',
+            success=True
+        )
+
         return {
             **state,
             'code': response.content,
@@ -221,6 +278,7 @@ def create_elon_workflow():
 
     def qa_test(state: AgentState):
         """测试"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.QA)
 
         prompt = f"""作为Elon的QA，请对以下代码进行测试：
@@ -234,6 +292,16 @@ def create_elon_workflow():
 3. 预期结果"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.QA,
+            action='qa_test',
+            details='完成测试代码生成',
+            success=True
+        )
+
         return {
             **state,
             'tests': response.content,
@@ -242,6 +310,7 @@ def create_elon_workflow():
 
     def reviewer_check(state: AgentState):
         """代码审查"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.REVIEWER)
 
         prompt = f"""作为Elon的Reviewer，请审查以下代码：
@@ -255,6 +324,16 @@ def create_elon_workflow():
 请提供审查意见和改进建议"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.REVIEWER,
+            action='reviewer_check',
+            details='完成代码审查',
+            success=True
+        )
+
         return {
             **state,
             'review': response.content,
@@ -285,6 +364,7 @@ def create_henry_workflow():
 
     def researcher_scan(state: AgentState):
         """社区调研"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.RESEARCHER)
 
         prompt = f"""作为Henry的Researcher，请调研以下信息：
@@ -298,6 +378,16 @@ def create_henry_workflow():
 4. 市场机会"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.RESEARCHER,
+            action='researcher_scan',
+            details='完成社区调研',
+            success=True
+        )
+
         return {
             **state,
             'research': response.content,
@@ -307,6 +397,7 @@ def create_henry_workflow():
 
     def writer_create(state: AgentState):
         """内容创作"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.WRITER)
 
         prompt = f"""作为Henry的Writer，请根据以下调研结果创建内容：
@@ -336,6 +427,16 @@ def create_henry_workflow():
 [内容]"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.WRITER,
+            action='writer_create',
+            details='完成内容创作',
+            success=True
+        )
+
         return {
             **state,
             'content': response.content,
@@ -345,6 +446,7 @@ def create_henry_workflow():
 
     def networker_interact(state: AgentState):
         """社交互动"""
+        task_id = state.get('task_id', 'unknown')
         llm = get_llm(AgentType.NETWORKER)
 
         prompt = f"""作为Henry的Networker，请准备社交互动内容：
@@ -359,6 +461,16 @@ def create_henry_workflow():
 4. 注意事项"""
 
         response = llm.invoke(prompt)
+
+        # 记录审计日志
+        audit_store.log_action(
+            task_id=task_id,
+            agent_type=AgentType.NETWORKER,
+            action='networker_interact',
+            details='完成社交互动准备',
+            success=True
+        )
+
         return {
             **state,
             'networking': response.content,
