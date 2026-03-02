@@ -96,7 +96,7 @@ async def health_check():
 @app.get("/api/agents")
 async def list_agents():
     return {
-        "success": true,
+        "success": True,
         "agents": [
             {
                 "type": agent_type,
@@ -139,7 +139,7 @@ async def start_workflow(agent_type: str, message: UserMessage):
     # 验证Agent类型
     if agent_type not in get_all_agent_types():
         return {
-            "success": false,
+            "success": False,
             "error": f"Unknown agent type: {agent_type}"
         }
 
@@ -264,7 +264,7 @@ async def execute_agent_workflow(task_id: str, agent_type: str, message: UserMes
 async def get_task_status(task_id: str):
     if task_id not in tasks_db:
         return {
-            "success": false,
+            "success": False,
             "error": "Task not found"
         }
 
@@ -290,9 +290,9 @@ async def get_task_status(task_id: str):
 async def delete_task(task_id: str):
     if task_id in tasks_db:
         del tasks_db[task_id]
-        return {"success": true, "message": "Task deleted"}
+        return {"success": True, "message": "Task deleted"}
 
-    return {"success": false, "error": "Task not found"}
+    return {"success": False, "error": "Task not found"}
 
 # 获取所有任务列表
 @app.get("/api/tasks")
