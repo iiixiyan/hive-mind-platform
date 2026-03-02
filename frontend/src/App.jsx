@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import AgentCard from './components/AgentCard.jsx';
 import WorkflowVisualization from './components/WorkflowVisualization.jsx';
+import AuditLogs from './components/AuditLogs.jsx';
+import SafetyEvents from './components/SafetyEvents.jsx';
 import api from './services/api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Settings, Activity, MessageSquare, Activity as ActivityIcon } from 'lucide-react';
+import { Send, Settings, Activity, MessageSquare, Activity as ActivityIcon, FileText, Shield } from 'lucide-react';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -191,6 +193,18 @@ function App() {
           >
             📋 Tasks
           </button>
+          <button
+            className={`nav-btn ${activeTab === 'audit' ? 'active' : ''}`}
+            onClick={() => setActiveTab('audit')}
+          >
+            📝 Audit Logs
+          </button>
+          <button
+            className={`nav-btn ${activeTab === 'safety' ? 'active' : ''}`}
+            onClick={() => setActiveTab('safety')}
+          >
+            🛡️ Safety
+          </button>
         </nav>
       </header>
 
@@ -345,6 +359,41 @@ function App() {
                   ))}
                 </div>
               )}
+            </motion.div>
+          )}
+
+          {activeTab === 'audit' && (
+            <motion.div
+              key="audit"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="audit"
+            >
+              <h2>📝 审计日志</h2>
+              {currentTaskId && (
+                <AuditLogs taskId={currentTaskId} />
+              )}
+              <div className="no-task-hint">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>选择一个任务查看其审计日志</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  或者运行任务后，这里会自动显示该任务的日志
+                </p>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'safety' && (
+            <motion.div
+              key="safety"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="safety"
+            >
+              <h2>🛡️ 安全事件</h2>
+              <SafetyEvents />
             </motion.div>
           )}
 
