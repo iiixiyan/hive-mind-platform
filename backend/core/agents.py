@@ -8,6 +8,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 
 from core.workflows import ECHO_WORKFLOW, ELON_WORKFLOW, HENRY_WORKFLOW
+from core.audit_store import audit_store
 
 # Agent类型
 class AgentType:
