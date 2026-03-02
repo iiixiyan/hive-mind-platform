@@ -24,6 +24,7 @@ from core.agents import (
     AgentState
 )
 from core.system_prompts import CORE_SYSTEM_PROMPT
+from core.audit_store import audit_store
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -298,7 +299,7 @@ async def delete_task(task_id: str):
 @app.get("/api/tasks")
 async def list_tasks():
     return {
-        "success": true,
+        "success": True,
         "tasks": [
             {
                 "id": t["id"],
@@ -309,6 +310,87 @@ async def list_tasks():
             }
             for t in tasks_db.values()
         ]
+    }
+
+# ===== 审计日志 API =====
+
+@app.get("/api/audit/logs")
+async def get_audit_logs(
+    task_id: Optional[str] = None,
+    agent_type: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0)
+):
+    """获取审计日志列表"""
+    if task_id:
+        # 获取特定任务的日志
+        logs = audit_store.get_task_logs(task_id, limit)
+        return {
+            "success": True,
+            "task_id": task_id,
+            "logs": logs,
+            "total": len(logs)
+        }
+    elif agent_type:
+        # 获取特定 Agent 的日志（需要从日志中筛选）
+        logs = audit_store.get_task_logs("", limit)
+        filtered_logs = [log for log in logs if log.get("agent_type") == agent_type]
+        return {
+            "success": True,
+            "agent_type": agent_type,
+            "logs": filtered_logs,
+            "total": len(filtered_logs)
+        }
+    else:
+        # 获取所有日志
+        # 注意：SQLite 查询需要修改 audit_store 来支持 offset/limit
+        return {
+            "success": True,
+            "message": "Use task_id or agent_type parameter to filter logs",
+            "hint": "Pass task_id to get logs for a specific task, or agent_type to get logs for a specific agent"
+        }
+
+@app.get("/api/safety/events")
+async def get_safety_events(
+    limit: int = Query(50, ge=1, le=500),
+    resolved: Optional[bool] = None
+):
+    """获取安全事件列表"""
+    events = audit_store.get_all_safety_events(limit)
+
+    if resolved is not None:
+        events = [e for e in events if e.get("resolved") == resolved]
+
+    return {
+        "success": True,
+        "events": events,
+        "total": len(events)
+    }
+
+@app.get("/api/safety/stats")
+async def get_safety_stats():
+    """获取安全统计信息"""
+    # 获取频率限制统计
+    stats = {
+        "henry_networker": audit_store.get_rate_limit_stats(AgentType.NETWORKER, "hourly_mentions"),
+        "elon_test_failures": audit_store.get_rate_limit_stats(AgentType.CODER, "test_failures")
+    }
+
+    return {
+        "success": True,
+        "stats": stats
+    }
+
+@app.get("/api/audit/logs/{task_id}")
+async def get_task_audit_logs(task_id: str, limit: int = Query(100, ge=1, le=1000)):
+    """获取特定任务的审计日志（旧端点，保留兼容性）"""
+    logs = audit_store.get_task_logs(task_id, limit)
+
+    return {
+        "success": True,
+        "task_id": task_id,
+        "logs": logs,
+        "total": len(logs)
     }
 
 # WebSocket端点
